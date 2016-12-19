@@ -10,7 +10,7 @@ Attribute VB_Name = "StringEx"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = True
 Attribute VB_PredeclaredId = False
-Attribute VB_Exposed = True
+Attribute VB_Exposed = False
 Option Explicit
 
 'so this class is a mash up between a StringBuffer class which vb6 really needs for large strings
@@ -40,6 +40,10 @@ Option Explicit
 'so really using this class will be a bit more nuanced than i would like..but should have good performance
 'and with some practice can do everything you need efficiently i think...still playing with it but this is where i am now..
 
+'this will let me experiment with how I want it to behave...eventually maybe a private const..
+'ok this wont work because some methods use private class members and I dont want to friend it..humm...
+'Public alwaysNew As Boolean 'default is true for now..
+
 Private Const LANG_US = &H409
 Private Const MAX_LONG As Long = 2147483647
 Private selIndex As Long 'used in setLowest
@@ -47,7 +51,7 @@ Private selIndex As Long 'used in setLowest
 Private p_Value As String
 Private p_ValueLen As Long
 Private p_ValueLenReal As Long
-Private p_ValuePtr As Long
+Private p_ValuePtr As Long     'Strptr(p_Value)
 
 'WINAPI
 
@@ -67,6 +71,7 @@ Private Declare Function URLDownloadToFile Lib "urlmon" Alias _
 
 Private Sub Class_Initialize()
     p_ValueLenReal = 256&
+    'alwaysNew = True
 End Sub
 
 Public Property Get value() As String
@@ -141,7 +146,15 @@ End Function
 
 Public Function insert(ByVal index As Long, ByRef InsertString As String) As StringEx
     
-    Set insert = Me
+'    Dim ret As StringEx
+'
+'    If alwaysNew Then
+'        Set insert = New StringEx
+'        insert.value = Me.value
+'    Else
+'        Set insert = Me
+'    End If
+    
     Dim l As Long
 
     l = Len(InsertString)
@@ -221,55 +234,63 @@ Public Function toUpper() As StringEx
     If p_ValueLen Then CharUpperBuffW p_ValuePtr, p_ValueLen
 End Function
 
-Public Function trim(Optional stripTabs As Boolean = False) As StringEx
+Public Function trim(Optional allWhiteSpace As Boolean = False) As StringEx
     Set trim = Me
-    lTrim
-    rTrim
-    If stripTabs Then value = Me.Replace(vbTab, Empty)
+    lTrim allWhiteSpace
+    rTrim allWhiteSpace
 End Function
 
-Public Function rTrim() As StringEx
+Function isSpace(Optional pos As Long = -1, Optional allWhiteSpace As Boolean = False) As Boolean
+    
+    Dim b As Integer
+    
+    If p_ValueLen < 1 Then Exit Function
+    
+    If pos = -1 Then 'check last character
+        b = Asc(Mid$(p_Value, p_ValueLen, 1&))
+    Else
+        b = Asc(Mid(p_Value, pos, 1))
+    End If
+    
+    If allWhiteSpace = False Then
+        isSpace = (b = 32)
+    Else
+        'return true for Space, CR, LF, Tab
+        isSpace = (b = 32)
+        If b = 10 Then isSpace = True
+        If b = 13 Then isSpace = True
+        If b = 9 Then isSpace = True
+    End If
+        
+End Function
+
+Public Function rTrim(Optional allWhiteSpace As Boolean = False) As StringEx
     
     Set rTrim = Me
-    
-    If p_ValueLen Then
-    
-        If AscW(Mid$(p_Value, p_ValueLen, 1&)) = 32 Then
-            
-            Do
-                p_ValueLen = p_ValueLen + -1
-            Loop While InStrRev(p_Value, ChrW$(32&), p_ValueLen, vbBinaryCompare) = p_ValueLen
-        
-        End If
-    
-    End If
+
+    While isSpace(True, allWhiteSpace)
+         p_ValueLen = p_ValueLen + -1
+    Wend
 
 End Function
 
-Public Function lTrim() As StringEx
+Public Function lTrim(Optional allWhiteSpace As Boolean = False) As StringEx
 
     Dim x As Long
 
     Set lTrim = Me
-    
-    If p_ValueLen Then
-    
-        If AscW(p_Value) = 32 Then
-    
-            Do
-                x = x + 1&
-            Loop While InStr(x + 1&, p_Value, ChrW$(32&), vbBinaryCompare) = (x + 1&)
-        
-            If x Then
-        
-                p_ValueLen = p_ValueLen - x
-            
-                RtlMoveMemory ByVal p_ValuePtr, ByVal p_ValuePtr + x + x, p_ValueLen + p_ValueLen
-            
-            End If
-        
-        End If
-    
+
+    x = 1
+    'how many white space characters are at the beginning of the string
+    While isSpace(x, allWhiteSpace)
+        x = x + 1
+    Wend
+
+    If x > 1 Then
+        x = x - 1 'zero based...we had to be 1 based for instr...
+        p_ValueLen = p_ValueLen - x
+        'take the whole block, and move it back x bytes (*2 is for unicode char width)
+        RtlMoveMemory ByVal p_ValuePtr, ByVal p_ValuePtr + (x * 2), p_ValueLen * 2
     End If
 
 End Function
